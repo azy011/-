@@ -3,13 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>内隐联想实验试填 · 花与昆虫</title>
+  <title>内隐联想实验试填</title>
   <link rel="stylesheet" href="https://unpkg.com/jspsych@8.3.0/css/jspsych.css">
   <script src="https://unpkg.com/jspsych@8.3.0"></script>
   <script src="https://unpkg.com/@jspsych/plugin-html-keyboard-response@2.2.0"></script>
   <script src="https://unpkg.com/@jspsych/plugin-html-button-response@2.1.0"></script>
   <script src="https://unpkg.com/@jspsych/extension-pipe@0.2.0"></script>
   <script src="config.js"></script>
+  <script src="stimuli.js"></script>
   <style>
     body { background: #f5f7fb; color: #182238; font-family: system-ui, "Microsoft YaHei", sans-serif; }
     .jspsych-display-element { font-size: 19px; }
@@ -44,7 +45,7 @@
 </head>
 <body>
 <script>
-  // 教学用简化 IAT：每个组合区块只有 16 题，不用于正式心理测量。
+  // 试填版单一目标分类任务；三个类别的刺激词均从 stimuli.js 读取。
   const experimentId = window.DATAPIPE_EXPERIMENT_ID;
   if (!experimentId || experimentId === 'PASTE_DATAPIPE_ID_HERE') {
     document.body.innerHTML = '<main class="card" style="max-width:680px;margin:8vh auto"><h1>尚未配置 DataPipe</h1><p>请先把 DataPipe 控制台中的实验 ID 填入 config.js，再发布此网页。</p></main>';
@@ -52,12 +53,19 @@
   }
   const participantId = crypto.randomUUID();
   const touchMode = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
+  const material = window.EXPERIMENT_STIMULI || {};
+  const targetLabel = material.targetLabel || '慢传统';
   const words = {
-    花: ['玫瑰', '百合', '荷花', '菊花'],
-    昆虫: ['苍蝇', '蚊子', '蟑螂', '蚂蚁'],
-    积极: ['快乐', '美好', '温暖', '愉悦'],
-    消极: ['痛苦', '糟糕', '悲伤', '厌恶']
+    [targetLabel]: material.targetWords || [],
+    积极: material.positiveWords || [],
+    消极: material.negativeWords || []
   };
+  if (targetLabel === '积极' || targetLabel === '消极' ||
+      Object.values(words).some(list => !Array.isArray(list) || list.length < 4 ||
+        list.some(word => typeof word !== 'string' || !word.trim()))) {
+    document.body.innerHTML = '<main class="card" style="max-width:680px;margin:8vh auto"><h1>刺激词尚未配置完整</h1><p>请在 stimuli.js 中为目标类别、积极和消极各填写至少 4 个词，再发布实验。</p></main>';
+    throw new Error('Stimulus lists are incomplete');
+  }
   const jsPsych = initJsPsych({
     on_finish: showResults,
     extensions: [{
@@ -65,6 +73,7 @@
       params: {
         experiment_id: experimentId,
         filename: () => `iat_trial_${participantId}.csv`,
+        data_string: exportTrialsCsv,
         on_save: result => {
           const status = document.getElementById('save-status');
           if (!status) return;
@@ -79,11 +88,9 @@
       }
     }]
   });
-  jsPsych.data.addProperties({ participant_id: participantId, experiment_version: 'pilot-5', input_mode: touchMode ? 'touch' : 'keyboard' });
+  jsPsych.data.addProperties({ participant_id: participantId, experiment_version: 'pilot-8', input_mode: touchMode ? 'touch' : 'keyboard' });
   const timeline = [];
-  const allCategories = Object.keys(words);
-  const combinedOrder = Math.random() < 0.5 ? ['相容', '不相容'] : ['不相容', '相容'];
-  jsPsych.data.addProperties({ combined_order: combinedOrder.join('→') });
+  const categories = Object.keys(words);
 
   function instruction(title, left, right, note) {
     return {
@@ -94,14 +101,18 @@
     };
   }
 
-  function addBlock(name, categories, mapping) {
+  function addBlock(name, phase, condition, mapping, pairedCategoryCount) {
     const left = Object.entries(mapping).filter(([, key]) => key === 'f').map(([cat]) => cat).join(' / ');
     const right = Object.entries(mapping).filter(([, key]) => key === 'j').map(([cat]) => cat).join(' / ');
-    timeline.push(instruction(name, left, right, '出现错误时会显示红色 ×；请记住本轮左右两侧的类别。'));
+    timeline.push(instruction(name, left, right, `${phase === 'practice' ? '练习阶段' : '正式阶段'}：出现错误时会显示红色 ×；请记住本轮左右两侧的类别。`));
 
-    const items = jsPsych.randomization.shuffle(categories.flatMap(category =>
-      words[category].map(word => ({ category, word }))
-    ));
+    const items = jsPsych.randomization.shuffle(categories.flatMap(category => {
+      const pool = jsPsych.randomization.shuffle(words[category]);
+      const count = mapping[category] === 'j' ? pairedCategoryCount * 2 : pairedCategoryCount;
+      return Array.from({ length: count }, (_, index) => ({
+        category, word: pool[index % pool.length]
+      }));
+    }));
     for (const item of items) {
       timeline.push({
         type: touchMode ? jsPsychHtmlButtonResponse : jsPsychHtmlKeyboardResponse,
@@ -109,9 +120,9 @@
         choices: touchMode ? ['左', '右'] : ['f', 'j'],
         ...(touchMode ? { button_html: choice => `<button class="touch-choice">${choice}</button>` } : {}),
         data: {
-          task: 'classification', block: name, category: item.category,
+          task: 'classification', phase, block: name, category: item.category,
           word: item.word, expected_key: mapping[item.category],
-          condition: name.includes('相容') ? (name.includes('不相容') ? 'incompatible' : 'compatible') : 'practice'
+          condition
         },
         on_finish: data => {
           data.response_key = touchMode ? (Number(data.response) === 0 ? 'f' : 'j') : data.response;
@@ -132,45 +143,71 @@
 
   timeline.push({
     type: touchMode ? jsPsychHtmlButtonResponse : jsPsychHtmlKeyboardResponse,
-    stimulus: `<div class="card"><h1>内隐联想实验试填</h1><p>你将把词语分成“花 / 昆虫”和“积极 / 消极”两组。${touchMode ? '每次点击“左”或“右”按钮回答。' : '每次只按 F（左）或 J（右）回答。'}</p><p>整个演示约需 2–3 分钟。请尽量不要中途切换窗口。</p><p class="hint">本试填不要求姓名。选择、反应时和随机编号会在作答过程中自动提交；中途退出时，已完成部分也可能保存。${touchMode ? '点击“同意并开始”' : '按空格'}即表示同意试填。结果不能解释为个人态度诊断。</p>${touchMode ? '' : '<p>按空格继续</p>'}</div>`,
+    stimulus: `<div class="card"><h1>内隐联想实验试填</h1><p>实验分为练习和正式两部分，每部分各有两组分类任务。看到“${targetLabel}”类词、积极词或消极词时，请根据屏幕上方的左右提示判断。${touchMode ? '每次点击“左”或“右”按钮回答。' : '每次只按 F（左）或 J（右）回答。'}</p><p>请尽量又快又准确地作答，不要中途切换窗口。</p><p class="hint">本试填不要求姓名。选择、反应时和随机编号会在作答过程中自动提交；中途退出时，已完成部分也可能保存。${touchMode ? '点击“同意并开始”' : '按空格'}即表示同意试填。结果不能解释为个人态度诊断。</p>${touchMode ? '' : '<p>按空格继续</p>'}</div>`,
     choices: touchMode ? ['同意并开始'] : [' '],
     ...(touchMode ? { button_html: choice => `<button class="touch-choice">${choice}</button>` } : {})
   });
 
-  addBlock('练习 1：花 / 昆虫', ['花', '昆虫'], { 花: 'f', 昆虫: 'j' });
-  addBlock('练习 2：积极 / 消极', ['积极', '消极'], { 积极: 'f', 消极: 'j' });
-  for (const condition of combinedOrder) {
-    const mapping = condition === '相容'
-      ? { 花: 'f', 积极: 'f', 昆虫: 'j', 消极: 'j' }
-      : { 花: 'f', 消极: 'f', 昆虫: 'j', 积极: 'j' };
-    addBlock(`组合分类：${condition}`, allCategories, mapping);
+  const positiveMapping = { [targetLabel]: 'f', 积极: 'f', 消极: 'j' };
+  const negativeMapping = { [targetLabel]: 'f', 消极: 'f', 积极: 'j' };
+  addBlock('练习第一组', 'practice', 'target_positive', positiveMapping, 4);
+  addBlock('练习第二组', 'practice', 'target_negative', negativeMapping, 4);
+  addBlock('正式第一组', 'formal', 'target_positive', positiveMapping, 8);
+  addBlock('正式第二组', 'formal', 'target_negative', negativeMapping, 8);
+
+  function summarizeTrials(rows) {
+    const formal = rows.filter(row => row.phase === 'formal');
+    const correct = formal.filter(row => row.correct);
+    const mean = arr => arr.length ? Math.round(arr.reduce((sum, row) => sum + row.rt, 0) / arr.length) : null;
+    const positive = mean(correct.filter(row => row.condition === 'target_positive'));
+    const negative = mean(correct.filter(row => row.condition === 'target_negative'));
+    const accuracy = formal.length ? Math.round(1000 * correct.length / formal.length) / 10 : null;
+    const delta = positive !== null && negative !== null ? negative - positive : null;
+    return { accuracy, positive, negative, delta };
+  }
+
+  function exportTrialsCsv() {
+    const rows = jsPsych.data.get().filter({ task: 'classification' }).values();
+    const summary = summarizeTrials(rows);
+    const columns = [
+      'trial_type', 'participant_id', 'experiment_version', 'input_mode',
+      'phase', 'block', 'condition', 'word', 'category', 'expected_key', 'response_key',
+      'correct', 'rt_ms', 'formal_accuracy_pct', 'target_positive_mean_correct_rt_ms',
+      'target_negative_mean_correct_rt_ms', 'rt_difference_ms'
+    ];
+    const escapeCsv = value => {
+      if (value === null || value === undefined) return '';
+      const text = String(value);
+      return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+    };
+    const records = rows.map(row => [
+      row.trial_type, row.participant_id, row.experiment_version, row.input_mode,
+      row.phase, row.block, row.condition, row.word, row.category, row.expected_key, row.response_key,
+      row.correct ? 1 : 0, row.rt, summary.accuracy, summary.positive,
+      summary.negative, summary.delta
+    ]);
+    return [columns, ...records].map(record => record.map(escapeCsv).join(',')).join('\r\n');
   }
 
   function showResults() {
     const rows = jsPsych.data.get().filter({ task: 'classification' }).values();
-    const combined = rows.filter(row => row.condition !== 'practice');
-    const correct = combined.filter(row => row.correct);
-    const mean = arr => arr.length ? Math.round(arr.reduce((sum, row) => sum + row.rt, 0) / arr.length) : null;
-    const compatible = mean(correct.filter(row => row.condition === 'compatible'));
-    const incompatible = mean(correct.filter(row => row.condition === 'incompatible'));
-    const accuracy = Math.round(100 * correct.length / combined.length);
-    const delta = compatible !== null && incompatible !== null ? incompatible - compatible : null;
+    const { accuracy, positive, negative, delta } = summarizeTrials(rows);
     document.body.innerHTML = `<main class="card" style="max-width:680px;margin:8vh auto;text-align:center">
       <h1>已完成作答</h1>
       <p id="save-status" class="saving">正在提交数据，请暂时不要关闭页面……</p>
-      <p>组合分类正确率：<strong>${accuracy}%</strong></p>
-      <p>“花 + 积极”平均正确反应时：<strong>${compatible ?? '无'} ms</strong></p>
-      <p>“花 + 消极”平均正确反应时：<strong>${incompatible ?? '无'} ms</strong></p>
+      <p>正式阶段正确率：<strong>${accuracy}%</strong></p>
+      <p>“${targetLabel} + 积极”平均正确反应时：<strong>${positive ?? '无'} ms</strong></p>
+      <p>“${targetLabel} + 消极”平均正确反应时：<strong>${negative ?? '无'} ms</strong></p>
       <p>反应时差（后一组 − 前一组）：<strong>${delta ?? '无'} ms</strong></p>
       <p class="hint">这里只是描述性结果。题量很少，且没有采用正式 IAT 的计分与质量控制流程，不能据此推断稳定的内隐态度。</p>
-      <button class="button" id="download">下载原始数据 CSV</button>
+      <button class="button" id="download">下载 Excel 可打开的 CSV</button>
     </main>`;
     document.getElementById('download').addEventListener('click', () => {
-      const csv = '\uFEFF' + jsPsych.data.get().csv();
+      const csv = '\uFEFF' + exportTrialsCsv();
       const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
       const link = document.createElement('a');
       link.href = url;
-      link.download = `iat_demo_${new Date().toISOString().slice(0, 10)}.csv`;
+      link.download = `iat_trial_${participantId}.csv`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     });
