@@ -77,7 +77,7 @@
       }
     }]
   });
-  jsPsych.data.addProperties({ participant_id: participantId, experiment_version: 'pilot-2', input_mode: touchMode ? 'touch' : 'keyboard' });
+  jsPsych.data.addProperties({ participant_id: participantId, experiment_version: 'pilot-3', input_mode: touchMode ? 'touch' : 'mouse' });
   const timeline = [];
   const allCategories = Object.keys(words);
   const combinedOrder = Math.random() < 0.5 ? ['相容', '不相容'] : ['不相容', '相容'];
@@ -85,10 +85,10 @@
 
   function instruction(title, left, right, note) {
     return {
-      type: touchMode ? jsPsychHtmlButtonResponse : jsPsychHtmlKeyboardResponse,
-      stimulus: `<div class="card"><h2>${title}</h2><p>请尽量又快又准确地判断屏幕中央的词。</p><p>${touchMode ? `左侧按钮 = ${left}　　右侧按钮 = ${right}` : `<kbd>F</kbd> = ${left}　　<kbd>J</kbd> = ${right}`}</p><p class="hint">${note}</p>${touchMode ? '' : '<p>按空格开始</p>'}</div>`,
-      choices: touchMode ? ['开始'] : [' '],
-      ...(touchMode ? { button_html: choice => `<button class="touch-choice">${choice}</button>` } : {})
+      type: jsPsychHtmlButtonResponse,
+      stimulus: `<div class="card"><h2>${title}</h2><p>请尽量又快又准确地判断屏幕中央的词。</p><p>左侧 = ${left}　　右侧 = ${right}</p><p class="hint">${note}</p></div>`,
+      choices: ['开始'],
+      button_html: choice => `<button class="touch-choice">${choice}</button>`
     };
   }
 
@@ -102,17 +102,17 @@
     ));
     for (const item of items) {
       timeline.push({
-        type: touchMode ? jsPsychHtmlButtonResponse : jsPsychHtmlKeyboardResponse,
-        stimulus: `<div class="keys"><div>${touchMode ? '左' : 'F'}　${left}</div><div>${right}　${touchMode ? '右' : 'J'}</div></div><div class="word">${item.word}</div>`,
-        choices: touchMode ? [`左：${left}`, `右：${right}`] : ['f', 'j'],
-        ...(touchMode ? { button_html: choice => `<button class="touch-choice">${choice}</button>` } : {}),
+        type: jsPsychHtmlButtonResponse,
+        stimulus: `<div class="keys"><div>左　${left}</div><div>${right}　右</div></div><div class="word">${item.word}</div>`,
+        choices: ['左', '右'],
+        button_html: choice => `<button class="touch-choice">${choice}</button>`,
         data: {
           task: 'classification', block: name, category: item.category,
           word: item.word, expected_key: mapping[item.category],
           condition: name.includes('相容') ? (name.includes('不相容') ? 'incompatible' : 'compatible') : 'practice'
         },
         on_finish: data => {
-          data.response_key = touchMode ? (Number(data.response) === 0 ? 'f' : 'j') : data.response;
+          data.response_key = Number(data.response) === 0 ? 'f' : 'j';
           data.correct = data.response_key === data.expected_key;
         }
       });
@@ -129,10 +129,10 @@
   }
 
   timeline.push({
-    type: touchMode ? jsPsychHtmlButtonResponse : jsPsychHtmlKeyboardResponse,
-    stimulus: `<div class="card"><h1>内隐联想实验试填</h1><p>你将把词语分成“花 / 昆虫”和“积极 / 消极”两组。${touchMode ? '每次点击左侧或右侧按钮回答。' : '每次用 <kbd>F</kbd>（左）或 <kbd>J</kbd>（右）回答。'}</p><p>整个演示约需 2–3 分钟。请尽量不要中途切换窗口。</p><p class="hint">本试填不要求姓名。选择、反应时和随机编号会在作答过程中自动提交；中途退出时，已完成部分也可能保存。${touchMode ? '点击“同意并开始”' : '按空格'}即表示同意试填。结果不能解释为个人态度诊断。</p>${touchMode ? '' : '<p>按空格继续</p>'}</div>`,
-    choices: touchMode ? ['同意并开始'] : [' '],
-    ...(touchMode ? { button_html: choice => `<button class="touch-choice">${choice}</button>` } : {})
+    type: jsPsychHtmlButtonResponse,
+    stimulus: '<div class="card"><h1>内隐联想实验试填</h1><p>你将把词语分成“花 / 昆虫”和“积极 / 消极”两组。每次点击“左”或“右”按钮回答。</p><p>整个演示约需 2–3 分钟。请尽量不要中途切换窗口。</p><p class="hint">本试填不要求姓名。选择、反应时和随机编号会在作答过程中自动提交；中途退出时，已完成部分也可能保存。点击“同意并开始”即表示同意试填。结果不能解释为个人态度诊断。</p></div>',
+    choices: ['同意并开始'],
+    button_html: choice => `<button class="touch-choice">${choice}</button>`
   });
 
   addBlock('练习 1：花 / 昆虫', ['花', '昆虫'], { 花: 'f', 昆虫: 'j' });
