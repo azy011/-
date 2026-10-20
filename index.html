@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>内隐联想实验试填 · 花与昆虫</title>
+  <link rel="stylesheet" href="https://unpkg.com/jspsych@8.3.0/css/jspsych.css">
+  <script src="https://unpkg.com/jspsych@8.3.0"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-html-keyboard-response@2.2.0"></script>
+  <script src="https://unpkg.com/@jspsych/extension-pipe@0.2.0"></script>
+  <script src="config.js"></script>
+  <style>
+    body { background: #f5f7fb; color: #182238; font-family: system-ui, "Microsoft YaHei", sans-serif; }
+    .jspsych-display-element { font-size: 19px; }
+    .jspsych-content { max-width: 850px; }
+    .card { padding: 32px; border-radius: 18px; background: white; box-shadow: 0 12px 36px #26375316; line-height: 1.75; }
+    h1, h2 { line-height: 1.25; }
+    .hint { color: #64748b; font-size: 15px; }
+    .keys { display: flex; justify-content: space-between; gap: 30px; margin: 0 auto 75px; max-width: 680px; font-weight: 700; }
+    .keys > div { width: 45%; }
+    .keys > div:last-child { text-align: right; }
+    .word { font-size: 50px; font-weight: 750; letter-spacing: .08em; min-height: 82px; }
+    .feedback { font-size: 42px; font-weight: 700; min-height: 50px; }
+    .wrong { color: #dc2626; }
+    .right { color: #16a34a; }
+    .saving { color: #92400e; }
+    .button { margin-top: 16px; padding: 12px 22px; border: 0; border-radius: 9px; background: #254dd8; color: white; font: inherit; cursor: pointer; }
+    kbd { margin: 0 3px; }
+  </style>
+</head>
+<body>
+<script>
+  // 教学用简化 IAT：每个组合区块只有 16 题，不用于正式心理测量。
+  const experimentId = window.DATAPIPE_EXPERIMENT_ID;
+  if (!experimentId || experimentId === 'PASTE_DATAPIPE_ID_HERE') {
+    document.body.innerHTML = '<main class="card" style="max-width:680px;margin:8vh auto"><h1>尚未配置 DataPipe</h1><p>请先把 DataPipe 控制台中的实验 ID 填入 config.js，再发布此网页。</p></main>';
+    throw new Error('DataPipe experiment ID is missing');
+  }
+  const participantId = crypto.randomUUID();
+  const words = {
+    花: ['玫瑰', '百合', '荷花', '菊花'],
+    昆虫: ['苍蝇', '蚊子', '蟑螂', '蚂蚁'],
+    积极: ['快乐', '美好', '温暖', '愉悦'],
+    消极: ['痛苦', '糟糕', '悲伤', '厌恶']
+  };
+  const jsPsych = initJsPsych({
+    on_finish: showResults,
+    extensions: [{
+      type: jsPsychExtensionPipe,
+      params: {
+        experiment_id: experimentId,
+        filename: () => `iat_trial_${participantId}.csv`,
+        on_save: result => {
+          const status = document.getElementById('save-status');
+          if (!status) return;
+          if (result.ok) {
+            status.className = 'right';
+            status.textContent = '数据已提交成功，可以关闭页面。';
+          } else {
+            status.className = 'wrong';
+            status.textContent = '自动提交失败。请点击下方按钮下载 CSV，并将文件发给研究者。';
+          }
+        }
+      }
+    }]
+  });
+  jsPsych.data.addProperties({ participant_id: participantId, experiment_version: 'pilot-1' });
+  const timeline = [];
+  const allCategories = Object.keys(words);
+  const combinedOrder = Math.random() < 0.5 ? ['相容', '不相容'] : ['不相容', '相容'];
+  jsPsych.data.addProperties({ combined_order: combinedOrder.join('→') });
+
+  function instruction(title, left, right, note) {
+    return {
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: `<div class="card"><h2>${title}</h2><p>请尽量又快又准确地判断屏幕中央的词。</p><p><kbd>F</kbd> = ${left}　　<kbd>J</kbd> = ${right}</p><p class="hint">${note}</p><p>按空格开始</p></div>`,
+      choices: [' ']
+    };
+  }
+
+  function addBlock(name, categories, mapping) {
+    const left = Object.entries(mapping).filter(([, key]) => key === 'f').map(([cat]) => cat).join(' / ');
+    const right = Object.entries(mapping).filter(([, key]) => key === 'j').map(([cat]) => cat).join(' / ');
+    timeline.push(instruction(name, left, right, '出现错误时会显示红色 ×；请记住本轮左右两侧的类别。'));
+
+    const items = jsPsych.randomization.shuffle(categories.flatMap(category =>
+      words[category].map(word => ({ category, word }))
+    ));
+    for (const item of items) {
+      timeline.push({
+        type: jsPsychHtmlKeyboardResponse,
+        stimulus: `<div class="keys"><div>F　${left}</div><div>${right}　J</div></div><div class="word">${item.word}</div>`,
+        choices: ['f', 'j'],
+        data: {
+          task: 'classification', block: name, category: item.category,
+          word: item.word, expected_key: mapping[item.category],
+          condition: name.includes('相容') ? (name.includes('不相容') ? 'incompatible' : 'compatible') : 'practice'
+        },
+        on_finish: data => { data.correct = data.response === data.expected_key; }
+      });
+      timeline.push({
+        type: jsPsychHtmlKeyboardResponse,
+        stimulus: () => jsPsych.data.get().last(1).values()[0].correct
+          ? '<div class="feedback right">✓</div>'
+          : '<div class="feedback wrong">×</div>',
+        choices: 'NO_KEYS',
+        trial_duration: () => jsPsych.data.get().last(1).values()[0].correct ? 180 : 500,
+        data: { task: 'feedback' }
+      });
+    }
+  }
+
+  timeline.push({
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: '<div class="card"><h1>内隐联想实验试填</h1><p>你将把词语分成“花 / 昆虫”和“积极 / 消极”两组。每次只用 <kbd>F</kbd>（左）或 <kbd>J</kbd>（右）回答。</p><p>整个演示约需 2–3 分钟。请在电脑键盘上完成，尽量不要中途切换窗口。</p><p class="hint">本试填不要求姓名。按键、反应时和随机编号会在作答过程中自动提交；中途退出时，已完成部分也可能保存。按空格继续即表示同意试填。结果不能解释为个人态度诊断。</p><p>按空格继续</p></div>',
+    choices: [' ']
+  });
+
+  addBlock('练习 1：花 / 昆虫', ['花', '昆虫'], { 花: 'f', 昆虫: 'j' });
+  addBlock('练习 2：积极 / 消极', ['积极', '消极'], { 积极: 'f', 消极: 'j' });
+  for (const condition of combinedOrder) {
+    const mapping = condition === '相容'
+      ? { 花: 'f', 积极: 'f', 昆虫: 'j', 消极: 'j' }
+      : { 花: 'f', 消极: 'f', 昆虫: 'j', 积极: 'j' };
+    addBlock(`组合分类：${condition}`, allCategories, mapping);
+  }
+
+  function showResults() {
+    const rows = jsPsych.data.get().filter({ task: 'classification' }).values();
+    const combined = rows.filter(row => row.condition !== 'practice');
+    const correct = combined.filter(row => row.correct);
+    const mean = arr => arr.length ? Math.round(arr.reduce((sum, row) => sum + row.rt, 0) / arr.length) : null;
+    const compatible = mean(correct.filter(row => row.condition === 'compatible'));
+    const incompatible = mean(correct.filter(row => row.condition === 'incompatible'));
+    const accuracy = Math.round(100 * correct.length / combined.length);
+    const delta = compatible !== null && incompatible !== null ? incompatible - compatible : null;
+    document.body.innerHTML = `<main class="card" style="max-width:680px;margin:8vh auto;text-align:center">
+      <h1>已完成作答</h1>
+      <p id="save-status" class="saving">正在提交数据，请暂时不要关闭页面……</p>
+      <p>组合分类正确率：<strong>${accuracy}%</strong></p>
+      <p>“花 + 积极”平均正确反应时：<strong>${compatible ?? '无'} ms</strong></p>
+      <p>“花 + 消极”平均正确反应时：<strong>${incompatible ?? '无'} ms</strong></p>
+      <p>反应时差（后一组 − 前一组）：<strong>${delta ?? '无'} ms</strong></p>
+      <p class="hint">这里只是描述性结果。题量很少，且没有采用正式 IAT 的计分与质量控制流程，不能据此推断稳定的内隐态度。</p>
+      <button class="button" id="download">下载原始数据 CSV</button>
+    </main>`;
+    document.getElementById('download').addEventListener('click', () => {
+      const csv = '\uFEFF' + jsPsych.data.get().csv();
+      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `iat_demo_${new Date().toISOString().slice(0, 10)}.csv`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+  }
+
+  jsPsych.run(timeline);
+</script>
+</body>
+</html>
