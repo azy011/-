@@ -83,7 +83,7 @@
       }
     }]
   });
-  jsPsych.data.addProperties({ participant_id: participantId, experiment_version: 'pilot-9', input_mode: touchMode ? 'touch' : 'keyboard' });
+  jsPsych.data.addProperties({ participant_id: participantId, experiment_version: 'pilot-10', input_mode: touchMode ? 'touch' : 'keyboard' });
   const timeline = [];
   const categories = Object.keys(words);
 
@@ -148,18 +148,23 @@
     const positive = mean(correct.filter(row => row.condition === 'target_positive'));
     const negative = mean(correct.filter(row => row.condition === 'target_negative'));
     const accuracy = formal.length ? Math.round(1000 * correct.length / formal.length) / 10 : null;
+    const groupAccuracy = condition => {
+      const group = formal.filter(row => row.condition === condition);
+      return group.length ? Math.round(1000 * group.filter(row => row.correct).length / group.length) / 10 : null;
+    };
+    const firstGroupAccuracy = groupAccuracy('target_positive');
+    const secondGroupAccuracy = groupAccuracy('target_negative');
     const delta = positive !== null && negative !== null ? negative - positive : null;
-    return { accuracy, positive, negative, delta };
+    return { accuracy, firstGroupAccuracy, secondGroupAccuracy, positive, negative, delta };
   }
 
   function exportTrialsCsv() {
-    const rows = jsPsych.data.get().filter({ task: 'classification' }).values();
+    const rows = jsPsych.data.get().filter({ task: 'classification', phase: 'formal' }).values();
     const summary = summarizeTrials(rows);
     const columns = [
-      'trial_type', 'participant_id', 'experiment_version', 'input_mode',
-      'phase', 'block', 'condition', 'word', 'category', 'expected_key', 'response_key',
-      'correct', 'rt_ms', 'formal_accuracy_pct', 'target_positive_mean_correct_rt_ms',
-      'target_negative_mean_correct_rt_ms', 'rt_difference_ms'
+      'participant_id', 'experiment_version', 'input_mode', 'phase', 'block', 'condition',
+      'word', 'category', 'expected_key', 'response_key', 'correct', 'rt_ms',
+      'group_accuracy_pct', 'formal_group_1_accuracy_pct', 'formal_group_2_accuracy_pct'
     ];
     const escapeCsv = value => {
       if (value === null || value === undefined) return '';
@@ -167,21 +172,23 @@
       return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
     };
     const records = rows.map(row => [
-      row.trial_type, row.participant_id, row.experiment_version, row.input_mode,
+      row.participant_id, row.experiment_version, row.input_mode,
       row.phase, row.block, row.condition, row.word, row.category, row.expected_key, row.response_key,
-      row.correct ? 1 : 0, row.rt, summary.accuracy, summary.positive,
-      summary.negative, summary.delta
+      row.correct ? 1 : 0, row.rt,
+      row.condition === 'target_positive' ? summary.firstGroupAccuracy : summary.secondGroupAccuracy,
+      summary.firstGroupAccuracy, summary.secondGroupAccuracy
     ]);
-    return [columns, ...records].map(record => record.map(escapeCsv).join(',')).join('\r\n');
+    return '\uFEFF' + [columns, ...records].map(record => record.map(escapeCsv).join(',')).join('\r\n');
   }
 
   function showResults() {
     const rows = jsPsych.data.get().filter({ task: 'classification' }).values();
-    const { accuracy, positive, negative, delta } = summarizeTrials(rows);
+    const { firstGroupAccuracy, secondGroupAccuracy, positive, negative, delta } = summarizeTrials(rows);
     document.body.innerHTML = `<main class="card" style="max-width:680px;margin:8vh auto;text-align:center">
       <h1>已完成作答</h1>
       <p id="save-status" class="saving">正在提交数据，请暂时不要关闭页面……</p>
-      <p>正式阶段正确率：<strong>${accuracy}%</strong></p>
+      <p>正式第一组正确率：<strong>${firstGroupAccuracy}%</strong></p>
+      <p>正式第二组正确率：<strong>${secondGroupAccuracy}%</strong></p>
       <p>“${targetLabel} + 积极”平均正确反应时：<strong>${positive ?? '无'} ms</strong></p>
       <p>“${targetLabel} + 消极”平均正确反应时：<strong>${negative ?? '无'} ms</strong></p>
       <p>反应时差（后一组 − 前一组）：<strong>${delta ?? '无'} ms</strong></p>
@@ -189,7 +196,7 @@
       <button class="button" id="download">下载 Excel 可打开的 CSV</button>
     </main>`;
     document.getElementById('download').addEventListener('click', () => {
-      const csv = '\uFEFF' + exportTrialsCsv();
+      const csv = exportTrialsCsv();
       const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
       const link = document.createElement('a');
       link.href = url;
