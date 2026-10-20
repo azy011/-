@@ -18,9 +18,6 @@
     .card { padding: 32px; border-radius: 18px; background: white; box-shadow: 0 12px 36px #26375316; line-height: 1.75; }
     h1, h2 { line-height: 1.25; }
     .hint { color: #64748b; font-size: 15px; }
-    .keys { display: flex; justify-content: space-between; gap: 30px; margin: 0 auto 75px; max-width: 680px; font-weight: 700; }
-    .keys > div { width: 45%; }
-    .keys > div:last-child { text-align: right; }
     .word { font-size: 50px; font-weight: 750; letter-spacing: .08em; min-height: 82px; }
     #jspsych-html-button-response-btngroup { display: flex; justify-content: center; gap: 14px; margin-top: 24px; }
     .jspsych-html-button-response-button { flex: 1; max-width: 330px; margin: 0 !important; }
@@ -28,7 +25,6 @@
     .touch-choice:active { background: #e8edff; }
     .key-hints { display: flex; justify-content: center; gap: 14px; margin-top: 24px; }
     .key-hint { flex: 1; max-width: 330px; min-height: 68px; display: grid; place-items: center; border: 2px solid #254dd8; border-radius: 12px; color: #254dd8; font-weight: 700; }
-    .feedback { font-size: 42px; font-weight: 700; min-height: 50px; }
     .wrong { color: #dc2626; }
     .right { color: #16a34a; }
     .saving { color: #92400e; }
@@ -37,7 +33,6 @@
     @media (max-width: 600px) {
       .jspsych-content { width: 100%; }
       .card { padding: 22px 18px; margin: 12px; }
-      .keys { gap: 12px; margin-bottom: 54px; font-size: 16px; }
       .word { font-size: 42px; }
       .touch-choice { font-size: 16px; min-height: 72px; }
     }
@@ -88,7 +83,7 @@
       }
     }]
   });
-  jsPsych.data.addProperties({ participant_id: participantId, experiment_version: 'pilot-8', input_mode: touchMode ? 'touch' : 'keyboard' });
+  jsPsych.data.addProperties({ participant_id: participantId, experiment_version: 'pilot-9', input_mode: touchMode ? 'touch' : 'keyboard' });
   const timeline = [];
   const categories = Object.keys(words);
 
@@ -104,7 +99,7 @@
   function addBlock(name, phase, condition, mapping, pairedCategoryCount) {
     const left = Object.entries(mapping).filter(([, key]) => key === 'f').map(([cat]) => cat).join(' / ');
     const right = Object.entries(mapping).filter(([, key]) => key === 'j').map(([cat]) => cat).join(' / ');
-    timeline.push(instruction(name, left, right, `${phase === 'practice' ? '练习阶段' : '正式阶段'}：出现错误时会显示红色 ×；请记住本轮左右两侧的类别。`));
+    timeline.push(instruction(name, left, right, `${phase === 'practice' ? '练习阶段' : '正式阶段'}：请记住本轮左右两侧的类别。`));
 
     const items = jsPsych.randomization.shuffle(categories.flatMap(category => {
       const pool = jsPsych.randomization.shuffle(words[category]);
@@ -116,8 +111,8 @@
     for (const item of items) {
       timeline.push({
         type: touchMode ? jsPsychHtmlButtonResponse : jsPsychHtmlKeyboardResponse,
-        stimulus: `<div class="keys"><div>左　${left}</div><div>${right}　右</div></div><div class="word">${item.word}</div>${touchMode ? '' : '<div class="key-hints"><div class="key-hint">左（F）</div><div class="key-hint">右（J）</div></div>'}`,
-        choices: touchMode ? ['左', '右'] : ['f', 'j'],
+        stimulus: `<div class="word">${item.word}</div>${touchMode ? '' : '<div class="key-hints"><div class="key-hint">F（左）</div><div class="key-hint">J（右）</div></div>'}`,
+        choices: touchMode ? ['F（左）', 'J（右）'] : ['f', 'j'],
         ...(touchMode ? { button_html: choice => `<button class="touch-choice">${choice}</button>` } : {}),
         data: {
           task: 'classification', phase, block: name, category: item.category,
@@ -129,21 +124,12 @@
           data.correct = data.response_key === data.expected_key;
         }
       });
-      timeline.push({
-        type: jsPsychHtmlKeyboardResponse,
-        stimulus: () => jsPsych.data.get().last(1).values()[0].correct
-          ? '<div class="feedback right">✓</div>'
-          : '<div class="feedback wrong">×</div>',
-        choices: 'NO_KEYS',
-        trial_duration: () => jsPsych.data.get().last(1).values()[0].correct ? 180 : 500,
-        data: { task: 'feedback' }
-      });
     }
   }
 
   timeline.push({
     type: touchMode ? jsPsychHtmlButtonResponse : jsPsychHtmlKeyboardResponse,
-    stimulus: `<div class="card"><h1>内隐联想实验试填</h1><p>实验分为练习和正式两部分，每部分各有两组分类任务。看到“${targetLabel}”类词、积极词或消极词时，请根据屏幕上方的左右提示判断。${touchMode ? '每次点击“左”或“右”按钮回答。' : '每次只按 F（左）或 J（右）回答。'}</p><p>请尽量又快又准确地作答，不要中途切换窗口。</p><p class="hint">本试填不要求姓名。选择、反应时和随机编号会在作答过程中自动提交；中途退出时，已完成部分也可能保存。${touchMode ? '点击“同意并开始”' : '按空格'}即表示同意试填。结果不能解释为个人态度诊断。</p>${touchMode ? '' : '<p>按空格继续</p>'}</div>`,
+    stimulus: `<div class="card"><h1>内隐联想实验试填</h1><p>实验分为四部分，每部分分为练习和正式两个环节，每环节各有两组分类任务。请根据每部分屏幕上方的指导语判断。${touchMode ? '每次点击 F（左）或 J（右）回答。' : '每次只按 F（左）或 J（右）回答。'}</p><p>请尽量又快又准确地作答，不要中途切换窗口。中途退出时，已完成部分也可能保存。</p><p>本实验收集数据仅用于学术研究。实验结束后请耐心等待数据保存。</p><p>${touchMode ? '同意参与本次实验请点击下方按钮开始。' : '同意参与本次实验请按空格开始。'}</p></div>`,
     choices: touchMode ? ['同意并开始'] : [' '],
     ...(touchMode ? { button_html: choice => `<button class="touch-choice">${choice}</button>` } : {})
   });
