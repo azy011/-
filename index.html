@@ -25,6 +25,7 @@
     .touch-choice:active { background: #e8edff; }
     .key-hints { display: flex; justify-content: center; gap: 14px; margin-top: 24px; }
     .key-hint { flex: 1; max-width: 330px; min-height: 68px; display: grid; place-items: center; border: 2px solid #254dd8; border-radius: 12px; color: #254dd8; font-weight: 700; }
+    .feedback { font-size: 42px; font-weight: 700; }
     .wrong { color: #dc2626; }
     .right { color: #16a34a; }
     .saving { color: #92400e; }
@@ -83,7 +84,7 @@
       }
     }]
   });
-  jsPsych.data.addProperties({ participant_id: participantId, experiment_version: 'pilot-10', input_mode: touchMode ? 'touch' : 'keyboard' });
+  jsPsych.data.addProperties({ participant_id: participantId, experiment_version: 'pilot-11', input_mode: touchMode ? 'touch' : 'keyboard' });
   const timeline = [];
   const categories = Object.keys(words);
 
@@ -124,6 +125,20 @@
           data.correct = data.response_key === data.expected_key;
         }
       });
+      if (phase === 'practice') {
+        timeline.push({
+          type: jsPsychHtmlKeyboardResponse,
+          stimulus: () => {
+            const last = jsPsych.data.get().last(1).values()[0];
+            return last.correct
+              ? '<div class="feedback right">✓ 正确</div>'
+              : `<div class="feedback wrong">× 错误</div><p>正确按键：${last.expected_key === 'f' ? 'F（左）' : 'J（右）'}</p>`;
+          },
+          choices: 'NO_KEYS',
+          trial_duration: 800,
+          data: { task: 'practice_feedback', phase, block: name }
+        });
+      }
     }
   }
 
