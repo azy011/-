@@ -21,10 +21,11 @@
     .word { font-size: 50px; font-weight: 750; letter-spacing: .08em; min-height: 82px; }
     #jspsych-html-button-response-btngroup { display: flex; justify-content: center; gap: 14px; margin-top: 24px; }
     .jspsych-html-button-response-button { flex: 1; max-width: 330px; margin: 0 !important; }
-    .touch-choice { width: 100%; min-height: 68px; padding: 12px; border: 2px solid #254dd8; border-radius: 12px; background: white; color: #254dd8; font: 700 18px system-ui, "Microsoft YaHei", sans-serif; touch-action: manipulation; cursor: pointer; }
+    .touch-choice, .key-hint { box-sizing: border-box; width: 100%; min-height: 68px; padding: 12px; display: grid; place-items: center; border: 2px solid #254dd8; border-radius: 12px; background: white; color: #254dd8; font: 700 18px system-ui, "Microsoft YaHei", sans-serif; }
+    .touch-choice { touch-action: manipulation; cursor: pointer; }
     .touch-choice:active { background: #e8edff; }
     .key-hints { display: flex; justify-content: center; gap: 14px; margin-top: 24px; }
-    .key-hint { flex: 1; max-width: 330px; min-height: 68px; display: grid; place-items: center; border: 2px solid #254dd8; border-radius: 12px; color: #254dd8; font-weight: 700; }
+    .key-hint { flex: 1; max-width: 330px; }
     .feedback { font-size: 42px; font-weight: 700; }
     .wrong { color: #dc2626; }
     .right { color: #16a34a; }
@@ -35,7 +36,7 @@
       .jspsych-content { width: 100%; }
       .card { padding: 22px 18px; margin: 12px; }
       .word { font-size: 42px; }
-      .touch-choice { font-size: 16px; min-height: 72px; }
+      .touch-choice, .key-hint { font-size: 16px; min-height: 72px; }
     }
   </style>
 </head>
@@ -58,9 +59,10 @@
   };
   if (targetLabel === '积极' || targetLabel === '消极' ||
       Object.values(words).some(list => !Array.isArray(list) || list.length < 4 ||
-        list.some(word => typeof word !== 'string' || !word.trim()))) {
-    document.body.innerHTML = '<main class="card" style="max-width:680px;margin:8vh auto"><h1>刺激词尚未配置完整</h1><p>请在 stimuli.js 中为目标类别、积极和消极各填写至少 4 个词，再发布实验。</p></main>';
-    throw new Error('Stimulus lists are incomplete');
+        list.some(word => typeof word !== 'string' || !word.trim())) ||
+      new Set(Object.values(words).flat()).size !== Object.values(words).flat().length) {
+    document.body.innerHTML = '<main class="card" style="max-width:680px;margin:8vh auto"><h1>刺激词配置有误</h1><p>请在 stimuli.js 中为三个类别各填写至少 4 个有效词，并确保所有词语都不重复。</p></main>';
+    throw new Error('Stimulus lists are incomplete or contain duplicate words');
   }
   const jsPsych = initJsPsych({
     on_finish: showResults,
@@ -84,9 +86,40 @@
       }
     }]
   });
-  jsPsych.data.addProperties({ participant_id: participantId, experiment_version: 'pilot-11', input_mode: touchMode ? 'touch' : 'keyboard' });
+  jsPsych.data.addProperties({ participant_id: participantId, experiment_version: 'pilot-13', input_mode: touchMode ? 'touch' : 'keyboard' });
   const timeline = [];
   const categories = Object.keys(words);
+  let lastStimulusWord = null;
+
+  function secureRandomIndex(maxInclusive) {
+    const range = maxInclusive + 1;
+    const limit = Math.floor(0x100000000 / range) * range;
+    const value = new Uint32Array(1);
+    do {
+      crypto.getRandomValues(value);
+    } while (value[0] >= limit);
+    return value[0] % range;
+  }
+
+  function secureShuffle(items) {
+    const result = [...items];
+    for (let i = result.length - 1; i > 0; i--) {
+      const j = secureRandomIndex(i);
+      [result[i], result[j]] = [result[j], result[i]];
+    }
+    return result;
+  }
+
+  function shuffleWithoutAdjacentRepeats(items, previousWord) {
+    for (let attempt = 0; attempt < 1000; attempt++) {
+      const shuffled = secureShuffle(items);
+      if (shuffled[0].word !== previousWord &&
+          shuffled.every((item, index) => index === 0 || item.word !== shuffled[index - 1].word)) {
+        return shuffled;
+      }
+    }
+    throw new Error('Could not arrange stimulus words without consecutive repeats');
+  }
 
   function instruction(title, left, right, note) {
     return {
@@ -102,13 +135,14 @@
     const right = Object.entries(mapping).filter(([, key]) => key === 'j').map(([cat]) => cat).join(' / ');
     timeline.push(instruction(name, left, right, `${phase === 'practice' ? '练习阶段' : '正式阶段'}：请记住本轮左右两侧的类别。`));
 
-    const items = jsPsych.randomization.shuffle(categories.flatMap(category => {
-      const pool = jsPsych.randomization.shuffle(words[category]);
+    const items = shuffleWithoutAdjacentRepeats(categories.flatMap(category => {
+      const pool = secureShuffle(words[category]);
       const count = mapping[category] === 'j' ? pairedCategoryCount * 2 : pairedCategoryCount;
       return Array.from({ length: count }, (_, index) => ({
         category, word: pool[index % pool.length]
       }));
-    }));
+    }), lastStimulusWord);
+    lastStimulusWord = items[items.length - 1].word;
     for (const item of items) {
       timeline.push({
         type: touchMode ? jsPsychHtmlButtonResponse : jsPsychHtmlKeyboardResponse,
